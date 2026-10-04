@@ -1,0 +1,65 @@
+[package]
+name = "nemlig"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "nemlig.com grocery API client library and command-line client"
+readme = "../../README.md"
+keywords = ["nemlig", "groceries", "api-client", "denmark"]
+categories = ["api-bindings", "command-line-utilities"]
+
+[lints]
+workspace = true
+
+[features]
+default = ["rustls-tls", "cli"]
+# TLS via rustls. Disable to supply your own reqwest::Client through
+# ClientBuilder::http_client, which is also how to get native-tls or a proxy.
+rustls-tls = ["reqwest/rustls"]
+# The `nemlig` binary. In the default set so `cargo install nemlig` works; a library
+# consumer turns it off with default-features = false and keeps only `rustls-tls`.
+cli = ["dep:clap", "dep:directories", "tokio/macros", "tokio/rt-multi-thread"]
+# Order placement, which spends real money. Off by default, and still refused at runtime
+# unless ClientBuilder::allow_place_order was also set. See `checkout::PlaceOrder`.
+place-order = []
+
+[[bin]]
+name = "nemlig"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[dependencies]
+chrono = { workspace = true, features = ["clock", "serde", "std"] }
+clap = { workspace = true, features = [
+  "derive",
+  "env",
+  "wrap_help",
+], optional = true }
+cookie_store = { workspace = true, features = ["serde_json"] }
+directories = { workspace = true, optional = true }
+reqwest = { workspace = true, features = [
+  "charset",
+  "cookies",
+  "http2",
+  "json",
+] }
+reqwest_cookie_store = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync", "time"] }
+tracing = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = [
+  "macros",
+  "rt-multi-thread",
+  "test-util",
+] }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+wiremock = { workspace = true }

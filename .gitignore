@@ -1,0 +1,29 @@
+# Rust
+/target/
+
+# Nix
+/.direnv/
+/result
+/hk.pkl
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor backups
+*~
+\#*\#
+.*.swp
+
+# Agentic
+#
+# Skills are shared: they are how someone opening this repository learns what the MCP
+# server is for. Everything else under .claude/ is one machine's local state.
+.claude/*
+!.claude/skills/

@@ -1,0 +1,37 @@
+[package]
+name = "nemlig-mcp"
+version.workspace = true
+edition.workspace = true
+# Not inherited: rmcp needs 1.88, and raising the workspace floor would raise the
+# library's too, for a dependency the library does not have.
+rust-version = "1.88"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "MCP server for the nemlig.com grocery API"
+readme = "README.md"
+keywords = ["nemlig", "mcp", "groceries", "denmark"]
+categories = ["command-line-utilities", "api-bindings"]
+
+[lints]
+workspace = true
+
+[dependencies]
+clap = { workspace = true, features = ["derive", "env", "wrap_help"] }
+directories = { workspace = true }
+# default-features = false drops the CLI target and, with it, `place-order`: the feature
+# is never enabled here, so order placement is not compiled into the server at all.
+nemlig = { workspace = true, features = ["rustls-tls"] }
+rmcp = { workspace = true, features = ["transport-io"] }
+schemars = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+[dev-dependencies]
+rmcp = { workspace = true, features = ["client"] }
+tokio = { workspace = true, features = ["io-util", "test-util"] }
+wiremock = { workspace = true }
