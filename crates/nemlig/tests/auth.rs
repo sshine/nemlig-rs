@@ -359,3 +359,45 @@ async fn a_request_without_the_anti_forgery_token_does_not_match() {
         .await
         .expect("the write carries both tokens");
 }
+
+#[tokio::test]
+async fn a_cached_session_the_server_refuses_is_not_read_back_off_disk() {
+    // The cache holds exactly the session that was just rejected, so restoring it would
+    // retry with what the server has already refused and fail the same way. The sign-in has
+    // to win over the cache.
+    let server = MockServer::start().await;
+    common::mount_handshake(&server).await;
+    common::mount_context(&server).await;
+
+    Mock::given(method("GET"))
+        .and(path("/webapi/basket/GetBasket"))
+        .respond_with(ResponseTemplate::new(401))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    site("GET", "/webapi/basket/GetBasket")
+        .respond_with(ok(common::basket(vec![])))
+        .mount(&server)
+        .await;
+
+    let dir = std::env::temp_dir().join(format!("nemlig-refused-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+
+    let client = Client::builder()
+        .credentials(Credentials::new("someone@example.com", PASSWORD))
+        .base_url(server.uri())
+        .session_file(dir.join("session.json"))
+        .min_interval(Duration::ZERO)
+        .max_retries(0)
+        .build()
+        .expect("builds");
+
+    client
+        .basket()
+        .get()
+        .await
+        .expect("the refusal is answered with a fresh sign-in, not the cached session");
+    assert_eq!(hits(&server, "/webapi/login").await, 2);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

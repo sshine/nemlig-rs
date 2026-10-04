@@ -78,7 +78,10 @@ impl Client {
             return Ok(tokens);
         }
 
-        if self.session().tokens().await.is_none() {
+        // Only while the cookies are still believed good. After a 401 they are not, and the
+        // cache on disk holds the same refused session, so reading it back would retry with
+        // what the server has just rejected instead of signing in.
+        if self.session().tokens().await.is_none() && self.session().cookies_trusted().await {
             self.session().restore().await;
             if let Some(tokens) = self.session().tokens().await
                 && !tokens.is_stale()

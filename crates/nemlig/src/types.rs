@@ -119,8 +119,16 @@ impl<'de> Deserialize<'de> for DanishNumber {
         use serde::de::Error as _;
 
         let raw = String::deserialize(de)?;
-        raw.replace('.', "")
-            .replace(',', ".")
+        // A Danish number writes the thousands separator as a point and the decimal as a
+        // comma. Dropping every point unconditionally would turn an ordinary "249.87" into
+        // 24987, so the point is only a separator when a comma is there to be the decimal.
+        let normalised = if raw.contains(',') {
+            raw.replace('.', "").replace(',', ".")
+        } else {
+            raw.clone()
+        };
+        normalised
+            .trim()
             .parse()
             .map(Self)
             .map_err(|_| D::Error::custom(format!("not a Danish decimal: {raw}")))
@@ -214,6 +222,12 @@ mod tests {
     fn a_danish_thousands_separator_is_dropped() {
         let n: DanishNumber = serde_json::from_str(r#""1.249,50""#).expect("parses");
         assert!((n.get() - 1249.50).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn a_plain_decimal_point_is_not_mistaken_for_a_thousands_separator() {
+        let n: DanishNumber = serde_json::from_str(r#""249.87""#).expect("parses");
+        assert!((n.get() - 249.87).abs() < f64::EPSILON);
     }
 
     #[test]
