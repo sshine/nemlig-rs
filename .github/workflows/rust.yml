@@ -1,0 +1,23 @@
+name: Rust CI
+
+# Tags are handled by the release workflow, which runs the same checks before publishing.
+# Keeping the triggers disjoint is what stops a tag push from running everything twice.
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, 2026-07-17
+      - uses: ./.github/actions/setup-nix
+      - uses: ./.github/actions/checks

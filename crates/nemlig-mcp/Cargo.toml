@@ -16,6 +16,18 @@ categories = ["command-line-utilities", "api-bindings"]
 [lints]
 workspace = true
 
+# What the release workflow attaches to the tag, spelled out so `cargo binstall` fetches
+# one of those archives instead of building from source. One archive per target carries
+# both binaries, so the stem is literal rather than `{ name }`: it does not vary by crate.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/nemlig-{ version }-{ target }.tar.gz"
+bin-dir = "nemlig-{ version }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.'cfg(target_os = "windows")']
+pkg-url = "{ repo }/releases/download/v{ version }/nemlig-{ version }-{ target }.zip"
+pkg-fmt = "zip"
+
 [dependencies]
 clap = { workspace = true, features = ["derive", "env", "wrap_help"] }
 directories = { workspace = true }

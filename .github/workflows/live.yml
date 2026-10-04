@@ -1,0 +1,36 @@
+name: Live API tests
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+
+    # One run at a time. The account has a single basket and a single session, so two runs
+    # would see each other's writes, and nemlig.com publishes no rate limit to budget against.
+    concurrency:
+      group: live-api-tests
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, 2026-07-17
+      - uses: ./.github/actions/setup-nix
+
+      - name: Build the live API tests
+        run: nix develop -c cargo test --all-features --test live --no-run
+
+      # NEMLIG_TEST_BASKET and NEMLIG_TEST_PRODUCT_ID are optional: without them the suite
+      # reads and nothing else. Set them as repository secrets to include the one test that
+      # changes the real basket and puts it back.
+      - name: Run the live API tests
+        env:
+          SECRETSPEC_PROVIDER: env
+          NEMLIG_USERNAME: ${{ secrets.NEMLIG_USERNAME }}
+          NEMLIG_PASSWORD: ${{ secrets.NEMLIG_PASSWORD }}
+          NEMLIG_TEST_BASKET: ${{ secrets.NEMLIG_TEST_BASKET }}
+          NEMLIG_TEST_PRODUCT_ID: ${{ secrets.NEMLIG_TEST_PRODUCT_ID }}
+        run: nix develop -c just live-test

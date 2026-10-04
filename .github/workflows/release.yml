@@ -1,0 +1,131 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# The binaries ship attached to the tag, which is what needs write access.
+permissions:
+  contents: write
+
+jobs:
+  # Everything downstream waits on this, so nothing ships that the Nix checks did not
+  # approve. It is also the only job that touches Nix, which keeps its store cache warm.
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, 2026-07-17
+      - uses: ./.github/actions/setup-nix
+      - uses: ./.github/actions/checks
+      - run: nix develop -c just check-version "${GITHUB_REF_NAME}"
+
+  # Drafted up front so each build can upload straight to it. A draft is invisible until
+  # the last job publishes it, so a matrix leg that fails leaves nothing half-released.
+  draft:
+    needs: gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, 2026-07-17
+      - run: gh release create "${GITHUB_REF_NAME}" --draft --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # Built with the runners' preinstalled rustup rather than through Nix. There is no Nix on
+  # the Windows runner, and reaching musl and Darwin from Nix means cross plumbing and an
+  # SDK for a system the flake does not build for. The toolchain is pinned the same either
+  # way, because rustup reads rust-toolchain.toml.
+  build:
+    needs: draft
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # musl rather than gnu: one static binary covers Debian, Alpine and NixOS alike.
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          # Cross-compiled from the same arm64 runner, which its Xcode SDK covers. Without
+          # it the release has nothing to offer an Intel Mac, since arm64 will not run there.
+          - runner: macos-15
+            target: x86_64-apple-darwin
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, 2026-07-17
+
+      - run: rustup target add ${{ matrix.target }}
+
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - run: cargo build --release --locked -p nemlig -p nemlig-mcp --target ${{ matrix.target }}
+
+      # One archive per target carrying both binaries. They are two crates but one thing to
+      # install, and someone who wants the MCP server usually wants the CLI to check it with.
+      #
+      # gh is preinstalled on every runner image, so uploading needs no action and the
+      # third-party surface here stays what it already was.
+      - name: Attach the archive
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          stem="nemlig-${GITHUB_REF_NAME#v}-${{ matrix.target }}"
+          mkdir -p "dist/${stem}"
+          cp LICENSE-MIT LICENSE-APACHE README.md crates/nemlig-mcp/README.md "dist/${stem}/"
+          cd dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp "../target/${{ matrix.target }}/release/nemlig.exe" "${stem}/"
+            cp "../target/${{ matrix.target }}/release/nemlig-mcp.exe" "${stem}/"
+            archive="${stem}.zip"
+            7z a "${archive}" "${stem}" > /dev/null
+          else
+            cp "../target/${{ matrix.target }}/release/nemlig" "${stem}/"
+            cp "../target/${{ matrix.target }}/release/nemlig-mcp" "${stem}/"
+            archive="${stem}.tar.gz"
+            tar czf "${archive}" "${stem}"
+          fi
+          gh release upload "${GITHUB_REF_NAME}" "${archive}"
+
+  # Hashing here rather than on each runner covers what GitHub actually stored, which is
+  # what a download is checked against, and keeps it to one platform's sha256sum.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, 2026-07-17
+      - uses: ./.github/actions/setup-nix
+
+      - name: Checksum what was attached
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release download "${GITHUB_REF_NAME}" --dir dist
+          (cd dist && sha256sum ./* > SHA256SUMS)
+          gh release upload "${GITHUB_REF_NAME}" dist/SHA256SUMS
+
+      # One tag releases both crates, because they inherit one workspace version.
+      - run: nix develop -c cargo publish --locked -p nemlig
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
+      # After the library, because the registry has to resolve the `nemlig` version this one
+      # depends on, and that is what the step above just uploaded. cargo waits for the index
+      # to carry it before returning, so the two need nothing between them.
+      - run: nix develop -c cargo publish --locked -p nemlig-mcp
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
+      # Last, so nothing is visible until the binaries, their checksums and the crates are
+      # all in place.
+      - run: gh release edit "${GITHUB_REF_NAME}" --draft=false
+        env:
+          GH_TOKEN: ${{ github.token }}
